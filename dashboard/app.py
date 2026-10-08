@@ -226,6 +226,9 @@ def live_view():
     now = pd.Timestamp.now(tz="UTC").tz_localize(None)
     since = now - pd.Timedelta(minutes=history_min)
     silver = silver[silver["event_time"] >= since].sort_values("event_time")
+    if silver.empty:
+        st.info(f"⏳ No readings in the last {history_min} minutes – is the generator running?")
+        return
     if not alerts.empty:
         alerts = alerts[alerts["event_time"] >= since].sort_values("event_time", ascending=False)
 
