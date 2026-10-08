@@ -11,8 +11,8 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 | Phase | What | Status |
 |---|---|---|
 | 1 | Project setup (folders, requirements, .gitignore) | ✅ done |
-| 2 | Kafka with Docker Compose | ⏳ next |
-| 3 | Wearable data simulator | ⏳ |
+| 2 | Kafka with Docker Compose | ✅ done |
+| 3 | Wearable data simulator | ⏳ next |
 | 4 | Spark Structured Streaming + Bronze/Silver/Gold | ⏳ |
 | 5 | Hive queries | ⏳ |
 | 6 | Spark MLlib risk model | ⏳ |
@@ -37,6 +37,46 @@ wearable-health-monitoring/
 └── .gitignore                keeps data, checkpoints, venvs and secrets out of git
 ```
 
+## Before you start (one-time setup)
+
+You only need **two programs** on your laptop. Everything else (Java 17, Spark 3.5.1, Kafka, Python libraries) runs inside Docker, so the steps are the same on Windows and Mac.
+
+1. **Docker Desktop** – https://www.docker.com/products/docker-desktop/
+   - Windows: during install keep "Use WSL 2" ticked. Restart when asked.
+   - Mac: pick the Apple-chip or Intel download that matches your Mac.
+   - Open Docker Desktop and wait until it says **"Engine running"**.
+   - RAM: *Settings → Resources* (Windows with WSL 2 manages this automatically). Give Docker **at least 4 GB** – 6 GB is comfortable on a 16 GB laptop.
+2. **Git** – https://git-scm.com/downloads (Mac: run `git --version` once and accept the install prompt).
+
+Open a terminal (**Windows: PowerShell**, **Mac: Terminal**) and go into the project folder:
+
+```bash
+cd wearable-health-monitoring
+```
+
+All commands below are typed in that folder. They are identical on Windows and Mac.
+
 ## How to run (so far)
 
-Nothing to run yet – Phase 1 only creates the project skeleton.
+### Phase 2 – Start Kafka
+
+```bash
+docker compose up -d kafka kafka-init
+```
+
+The first time, this downloads the Kafka image (~400 MB). Check it worked:
+
+```bash
+docker compose ps                 # "kafka" should show (healthy)
+docker compose logs kafka-init    # should print: Topic: vitals  PartitionCount: 3
+```
+
+List the topics yourself:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:29092 --list
+```
+
+Expected output: `vitals`
+
+Stop everything (keeps the data) with `docker compose stop`; start again with `docker compose start`.
