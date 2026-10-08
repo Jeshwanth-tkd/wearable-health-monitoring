@@ -10,6 +10,8 @@
 #   3. Big Data platform  spark-streaming    (Spark Structured Streaming -> Bronze/Silver/Gold Parquet)
 #                         hive-queries       (HiveQL tables + example queries, run on demand)
 #                         hive-shell         (interactive HiveQL prompt, run on demand)
+#   4. Analytics          ml                 (Spark MLlib risk model, re-scores every 60 s)
+#                         ml-once            (train + score once, run on demand)
 #
 # More services are added in the later phases.
 # ===========================================================================
@@ -177,6 +179,21 @@ services:
               "--conf", "spark.sql.hive.manageFilesourcePartitions=false",
               "--conf", "spark.sql.session.timeZone=UTC",
               "--database", "wearable_health"]
+
+  # -------------------------------------------------------------------------
+  # PHASE 6 - Spark MLlib risk model (Decision Tree + KMeans clustering).
+  #   docker compose up -d ml          -> keeps re-scoring patients every 60 s (for the live demo)
+  #   docker compose run --rm ml-once  -> train + score once and print the report
+  # -------------------------------------------------------------------------
+  ml:
+    <<: *app
+    container_name: ml
+    command: ["spark-submit", "--driver-memory", "1g", "ml/risk_model.py", "--every", "60"]
+
+  ml-once:
+    <<: *app
+    profiles: ["tools"]
+    command: ["spark-submit", "--driver-memory", "1g", "ml/risk_model.py"]
 
 volumes:
   kafka_data:       # Kafka's message log

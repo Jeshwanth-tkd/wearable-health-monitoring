@@ -15,8 +15,8 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 | 3 | Wearable data simulator | ✅ done |
 | 4 | Spark Structured Streaming + Bronze/Silver/Gold | ✅ done |
 | 5 | Hive queries | ✅ done |
-| 6 | Spark MLlib risk model | ⏳ next |
-| 7 | Streamlit dashboard | ⏳ |
+| 6 | Spark MLlib risk model | ✅ done |
+| 7 | Streamlit dashboard | ⏳ next |
 | 8 | Final docs + viva questions | ⏳ |
 
 ## Folder structure
@@ -203,3 +203,34 @@ spark-sql (wearable_health)> SELECT alert_type, COUNT(*) FROM alerts GROUP BY al
 ```
 
 Run `hive-queries` and `hive-shell` one at a time (the Derby metastore allows one user at a time).
+
+### Phase 6 – Spark MLlib risk model (Low / Medium / High)
+
+Wait until the streaming job has produced at least ~40 one-minute windows (about 3 minutes with 20 patients). Then run the model once to see the full report:
+
+```bash
+docker compose run --rm ml-once
+```
+
+It prints:
+
+- the label mix and **test accuracy / F1**
+- **feature importance** (which vital signs matter most)
+- the **decision tree as IF/ELSE rules**, e.g. `If (avg_spo2 <= 94.97) ... Predict: Medium`
+- a table of every patient's **risk level, risk score (0–100) and cluster group**
+
+For the live demo, keep it re-scoring every 60 seconds in the background:
+
+```bash
+docker compose up -d ml
+docker compose logs -f ml
+```
+
+Outputs: `data/gold/patient_risk/` (Parquet, also the Hive table `patient_risk`), `data/gold/model_metrics.json`, and the saved model in `data/models/risk_decision_tree/`.
+
+How the model works (simple version for the viva):
+
+1. **Labels:** each 1-minute window gets points from an early-warning score (like the NHS NEWS2 score). Each vital outside its normal band adds points: 0–1 → Low, 2–3 → Medium, 4+ → High.
+2. **Model:** a `DecisionTreeClassifier` (depth 4) learns to predict that label from `avg_hr, max_hr, avg_spo2, min_spo2, avg_sys, avg_dia, avg_temp, falls`. The data is split 80/20 into train and test.
+3. **Patient level:** majority vote of the patient's last 5 minutes, so one noisy minute doesn't flip it.
+4. **Clustering:** KMeans (k = 3) on each patient's average vitals → *Stable / Watch / Unstable* groups.
