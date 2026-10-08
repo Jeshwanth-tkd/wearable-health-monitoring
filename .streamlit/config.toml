@@ -1,0 +1,13 @@
+# Streamlit settings for the dashboard (read automatically when Streamlit
+# starts from the project folder).
+
+[theme]
+base = "dark"                 # dark theme, like the Grafana mock-up in the PPT
+primaryColor = "#4f9ee8"
+
+[server]
+headless = true               # don't try to open a browser inside Docker
+fileWatcherType = "none"      # don't watch files (saves CPU on Windows/Mac mounts)
+
+[browser]
+gatherUsageStats = false

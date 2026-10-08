@@ -12,8 +12,8 @@
 #                         hive-shell         (interactive HiveQL prompt, run on demand)
 #   4. Analytics          ml                 (Spark MLlib risk model, re-scores every 60 s)
 #                         ml-once            (train + score once, run on demand)
+#   5. Visualization      dashboard          (Streamlit, http://localhost:8501)
 #
-# More services are added in the later phases.
 # ===========================================================================
 name: wearable-health
 
@@ -194,6 +194,17 @@ services:
     <<: *app
     profiles: ["tools"]
     command: ["spark-submit", "--driver-memory", "1g", "ml/risk_model.py"]
+
+  # -------------------------------------------------------------------------
+  # PHASE 7 - Streamlit live dashboard  ->  http://localhost:8501
+  # -------------------------------------------------------------------------
+  dashboard:
+    <<: *app
+    container_name: dashboard
+    ports:
+      - "8501:8501"
+    command: ["streamlit", "run", "dashboard/app.py",
+              "--server.address=0.0.0.0", "--server.port=8501"]
 
 volumes:
   kafka_data:       # Kafka's message log

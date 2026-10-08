@@ -16,8 +16,8 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 | 4 | Spark Structured Streaming + Bronze/Silver/Gold | ✅ done |
 | 5 | Hive queries | ✅ done |
 | 6 | Spark MLlib risk model | ✅ done |
-| 7 | Streamlit dashboard | ⏳ next |
-| 8 | Final docs + viva questions | ⏳ |
+| 7 | Streamlit dashboard | ✅ done |
+| 8 | Final docs + viva questions | ⏳ next |
 
 ## Folder structure
 
@@ -234,3 +234,18 @@ How the model works (simple version for the viva):
 2. **Model:** a `DecisionTreeClassifier` (depth 4) learns to predict that label from `avg_hr, max_hr, avg_spo2, min_spo2, avg_sys, avg_dia, avg_temp, falls`. The data is split 80/20 into train and test.
 3. **Patient level:** majority vote of the patient's last 5 minutes, so one noisy minute doesn't flip it.
 4. **Clustering:** KMeans (k = 3) on each patient's average vitals → *Stable / Watch / Unstable* groups.
+
+### Phase 7 – Live dashboard (Streamlit)
+
+```bash
+docker compose up -d dashboard
+```
+
+Open **http://localhost:8501** in your browser. The page refreshes itself every 5 seconds (change it, or pause it, in the left sidebar). It shows:
+
+- **KPI cards:** patients monitored, readings ingested, average alert latency, critical alerts, high-risk patients, model accuracy
+- **Live heart-rate and SpO2 charts** for one patient, with the red dashed alert threshold (120 bpm / 92 %). Readings that cross it are red dots. *Auto: latest alert* follows whichever patient alarmed last.
+- **Alerts by type** bar chart and the **MLlib risk-level donut** (Low / Medium / High)
+- **Red alerts table** – newest first, CRITICAL rows darker red
+- **Patient risk table** – risk level, risk score bar, KMeans cluster, average vitals
+- Expanders: **decision-tree rules** and **pipeline status**, which shows the Parquet file and row counts per Bronze/Silver/Gold layer
