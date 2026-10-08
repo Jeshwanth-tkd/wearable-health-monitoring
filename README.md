@@ -25,7 +25,7 @@ Wearables ─► (MQTT) ─► Kafka ─► Spark Structured Streaming ─► Da
 | 7 | Streamlit dashboard | ✅ done |
 | 8 | Final docs + viva questions | ✅ done |
 
-> **Verification note:** the network of the build environment blocked Docker Hub, PyPI and Maven, so the full Docker pipeline was not run there. Checked so far: every Python file compiles, `docker-compose.yml` validates, the simulator runs (dry-run mode), the logic tests pass (`tests/test_logic.py`), and the Spark/PySpark API calls were checked against the Spark 3.5.1 source. **Your first `docker compose` run is the first full end-to-end run.** Follow the *Detailed step-by-step* section once to confirm each phase.
+> **Verification note:** the full Docker pipeline has been run end to end on a Windows 11 laptop (Docker Desktop on WSL 2): build, generator + Kafka, Spark streaming (Bronze/Silver/Gold all filled), the MLlib risk model, the dashboard on http://localhost:8501 and all 7 HiveQL queries. The logic tests (`tests/test_logic.py`) pass. Screenshots from that run are in the *Screenshots* section below.
 
 ## Folder structure
 
@@ -198,13 +198,19 @@ then delete the folders inside `data/`:
 
 ## Screenshots
 
-Once your demo is running, take screenshots of the dashboard (http://localhost:8501), the Spark UI (http://localhost:4040) and the `hive-queries` output. Save them in `docs/screenshots/`, for example `docs/screenshots/dashboard.png`, then add them here:
+Taken from a real end-to-end run (20 patients, about 12 minutes of streaming).
 
-```markdown
+**Live dashboard** (http://localhost:8501) – KPI cards, live heart-rate and SpO2 charts with alert thresholds, alerts by type, MLlib risk donut, latest alerts and patient risk table:
+
 ![Live dashboard](docs/screenshots/dashboard.png)
-```
 
-(They could not be captured while building the project, because the build environment had no access to Docker Hub.)
+**Spark UI – Structured Streaming tab** (http://localhost:4040) – the four streaming queries (Bronze, Silver, Gold alerts, Gold 1-minute windows) all running:
+
+![Spark UI streaming queries](docs/screenshots/spark_ui_streaming.png)
+
+**Hive** – `docker compose run --rm hive-queries` creating the tables and printing the 7 example HiveQL queries:
+
+![Hive queries output](docs/screenshots/hive_queries.png)
 
 ## Troubleshooting
 
