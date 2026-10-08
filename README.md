@@ -12,8 +12,8 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 |---|---|---|
 | 1 | Project setup (folders, requirements, .gitignore) | ✅ done |
 | 2 | Kafka with Docker Compose | ✅ done |
-| 3 | Wearable data simulator | ⏳ next |
-| 4 | Spark Structured Streaming + Bronze/Silver/Gold | ⏳ |
+| 3 | Wearable data simulator | ✅ done |
+| 4 | Spark Structured Streaming + Bronze/Silver/Gold | ⏳ next |
 | 5 | Hive queries | ⏳ |
 | 6 | Spark MLlib risk model | ⏳ |
 | 7 | Streamlit dashboard | ⏳ |
@@ -80,3 +80,48 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafk
 Expected output: `vitals`
 
 Stop everything (keeps the data) with `docker compose stop`; start again with `docker compose start`.
+
+### Phase 3 – Start the wearable simulator
+
+Builds our app image (first time only, ~5–10 min: it downloads Spark 3.5.1 + Java 17 + Python libraries), then starts streaming 20 patients into Kafka:
+
+```bash
+docker compose up -d --build generator
+docker compose logs -f generator        # Ctrl+C to stop watching (the generator keeps running)
+```
+
+You should see lines like:
+
+```
+[simulator] connected to Kafka at kafka:29092, topic 'vitals'
+[simulator] streaming 20 patients every 1-2 s. Press Ctrl+C to stop.
+[simulator] !! P-017: abnormal episode started -> tachycardia
+[simulator] sent 1320 readings so far (3 abnormal episodes, 5 invalid)
+```
+
+Read 5 messages straight from the Kafka topic to prove they arrived:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:29092 --topic vitals --max-messages 5
+```
+
+Each message looks like:
+
+```json
+{"patient_id": "P-007", "device_id": "DEV-007", "timestamp": "2026-10-08 04:02:05.496", "heart_rate": 94, "spo2": 94.2,
+ "systolic_bp": 132, "diastolic_bp": 83, "body_temp": 37.2, "steps": 1757, "fall_detected": false}
+```
+
+Run the logic tests (no Kafka needed):
+
+```bash
+docker compose run --rm generator python3 -m unittest tests/test_logic.py -v
+```
+
+**Optional – full MQTT path from the PPT** (smartphone → MQTT broker → Kafka). Use this *instead of* the normal generator:
+
+```bash
+docker compose stop generator
+docker compose --profile mqtt up -d mosquitto mqtt-bridge generator-mqtt
+docker compose logs -f mqtt-bridge      # "forwarded 500 messages MQTT -> Kafka"
+```
