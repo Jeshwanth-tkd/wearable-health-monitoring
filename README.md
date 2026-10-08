@@ -1,10 +1,16 @@
 # Healthcare – Wearable Device Health Monitoring
 
-A working Big Data mini-project that follows the architecture in our slides:
+A working Big Data mini-project that follows the architecture in our slides, end to end:
 
 ```
-Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bronze/Silver/Gold → Hive → Spark MLlib → Dashboard
+Wearables ─► (MQTT) ─► Kafka ─► Spark Structured Streaming ─► Data lake Bronze / Silver / Gold (Parquet)
+                                                                   │
+                                        Dashboard ◄─ Spark MLlib ◄─┴─► Hive (HiveQL)
 ```
+
+20 simulated patients send heart rate, SpO2, blood pressure, temperature, steps and fall events every 1–2 s. Kafka ingests the stream. Spark cleans it, raises threshold alerts within seconds and builds 1-minute patient features. Hive queries the lake, an MLlib decision tree labels every patient Low / Medium / High risk, and a live dashboard shows it all.
+
+**Pinned versions (chosen to work together):** Apache Spark / PySpark **3.5.1** (Scala 2.12) · Java **17** · Kafka connector `spark-sql-kafka-0-10_2.12:3.5.1` + `kafka-clients 3.4.1` · Apache Kafka **3.7.1** (KRaft) · Python **3.10** · Streamlit 1.39 · Mosquitto 2.0.18. All run inside Docker, so the same commands work on **Windows and Mac**, and you don't install Java or Spark yourself. Peak memory is about 4 GB, so it fits an 8 GB laptop.
 
 ## Project status
 
@@ -12,29 +18,43 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 |---|---|---|
 | 1 | Project setup (folders, requirements, .gitignore) | ✅ done |
 | 2 | Kafka with Docker Compose | ✅ done |
-| 3 | Wearable data simulator | ✅ done |
+| 3 | Wearable data simulator (+ optional MQTT path) | ✅ done |
 | 4 | Spark Structured Streaming + Bronze/Silver/Gold | ✅ done |
 | 5 | Hive queries | ✅ done |
 | 6 | Spark MLlib risk model | ✅ done |
 | 7 | Streamlit dashboard | ✅ done |
-| 8 | Final docs + viva questions | ⏳ next |
+| 8 | Final docs + viva questions | ✅ done |
+
+> **Verification note:** the network of the build environment blocked Docker Hub, PyPI and Maven, so the full Docker pipeline was not run there. Checked so far: every Python file compiles, `docker-compose.yml` validates, the simulator runs (dry-run mode), the logic tests pass (`tests/test_logic.py`), and the Spark/PySpark API calls were checked against the Spark 3.5.1 source. **Your first `docker compose` run is the first full end-to-end run.** Follow the *Detailed step-by-step* section once to confirm each phase.
 
 ## Folder structure
 
 ```
 wearable-health-monitoring/
-├── common/settings.py        shared paths, Kafka topic, alert thresholds, risk-score rules
-├── generator/                wearable device simulator (Phase 3)
-├── ingestion/                optional MQTT broker config + MQTT → Kafka bridge (Phase 3)
-├── spark/                    Spark Structured Streaming job (Phase 4)
-├── hive/                     Hive table definitions + example HiveQL queries (Phase 5)
-├── ml/                       Spark MLlib risk model (Phase 6)
-├── dashboard/                Streamlit live dashboard (Phase 7)
-├── docs/                     how-it-works notes, viva questions, screenshots
-├── tests/                    small logic tests (no Kafka/Spark needed)
-├── data/                     the data lake: bronze/ silver/ gold/ (created at runtime, not committed)
-├── requirements.txt          pinned Python libraries
-└── .gitignore                keeps data, checkpoints, venvs and secrets out of git
+├── common/settings.py              shared paths, Kafka topic, alert thresholds, risk-score rules
+├── generator/wearable_simulator.py wearable devices (20 patients) -> Kafka (or MQTT)
+├── ingestion/mqtt_to_kafka_bridge.py   optional MQTT -> Kafka forwarder
+├── ingestion/mosquitto.conf        optional MQTT broker settings
+├── spark/streaming_job.py          Spark Structured Streaming: Kafka -> Bronze / Silver / Gold
+├── spark/check_layers.py           prints row counts + samples of every layer
+├── hive/create_tables.hql          Hive external tables over the data lake
+├── hive/queries.hql                7 example HiveQL queries
+├── hive/run_hive_queries.py        runs the two .hql files through Spark's Hive support
+├── ml/risk_model.py                Spark MLlib decision tree (Low/Medium/High) + KMeans clusters
+├── dashboard/app.py                Streamlit live dashboard
+├── tests/test_logic.py             logic tests (simulator, thresholds, risk score) - no Spark needed
+├── docker-compose.yml              starts every service
+├── Dockerfile                      one image: Spark 3.5.1 + Java 17 + Python libs + Kafka connector
+├── requirements.txt                pinned Python libraries
+├── .streamlit/config.toml          dashboard theme
+├── docs/screenshots/               put your dashboard screenshots here
+└── data/                           the data lake (created at runtime, NOT committed to git)
+    ├── bronze/raw_vitals/          raw JSON from Kafka
+    ├── silver/vitals/              cleaned readings
+    ├── gold/alerts/  gold/vitals_1min/  gold/patient_risk/  gold/model_metrics.json
+    ├── reference/patients/         patient master list (CSV)
+    ├── checkpoints/                Spark streaming checkpoints
+    └── models/                     saved MLlib model
 ```
 
 ## Before you start (one-time setup)
@@ -56,7 +76,165 @@ cd wearable-health-monitoring
 
 All commands below are typed in that folder. They are identical on Windows and Mac.
 
-## How to run (so far)
+
+## ▶️ Run the demo (the short version)
+
+First time only: do the **one-time setup** above, then build the image (5–10 min):
+
+```bash
+docker compose build
+```
+
+Then, in this order:
+
+```bash
+# 1. Start Docker Desktop and wait for "Engine running"
+
+# 2. Start Kafka + the wearable generator (Kafka starts automatically first)
+docker compose up -d generator
+
+# 3. Start the Spark streaming job (Kafka -> Bronze / Silver / Gold)
+docker compose up -d spark-streaming
+
+#    ...wait about 3 minutes so Spark can write some 1-minute windows...
+
+# 4. Start the MLlib risk model (re-scores every 60 s)
+docker compose up -d ml
+
+# 5. Start the dashboard, then open http://localhost:8501
+docker compose up -d dashboard
+```
+
+Optional, during the viva:
+
+```bash
+docker compose run --rm hive-queries                          # Hive tables + 7 HiveQL queries
+docker compose exec spark-streaming spark-submit spark/check_layers.py   # Bronze/Silver/Gold counts
+docker compose run --rm ml-once                               # print the decision-tree rules + accuracy
+docker compose logs -f generator                              # watch readings / abnormal episodes
+```
+
+Spark UI (live streaming statistics): http://localhost:4040 → *Structured Streaming* tab.
+
+**Stop** (keeps all data): `docker compose stop`  ·  **Start again**: `docker compose start`
+
+**Full reset** (delete all data and start fresh). Always delete the data folders *and* the Docker volumes together, otherwise Spark's checkpoints won't match Kafka:
+
+```bash
+docker compose down -v
+```
+
+then delete the folders inside `data/`:
+
+- Windows (PowerShell): `Remove-Item -Recurse -Force data\bronze, data\silver, data\gold, data\checkpoints, data\models, data\reference`
+- Mac: `rm -rf data/bronze data/silver data/gold data/checkpoints data/models data/reference`
+
+
+## How it works – code files mapped to the PPT architecture
+
+| # | PPT layer (slide 4) | PPT component | Code file / service | What it does here |
+|---|---|---|---|---|
+| 1 | Wearable devices | Smartwatch / band, ECG patch, BP cuff, smartphone BLE gateway | `generator/wearable_simulator.py` (service `generator`) | 20 virtual patients (60 % Low, 25 % Medium, 15 % High risk profiles). Each sends a JSON reading every 1–2 s. Short abnormal episodes (tachycardia, hypoxia, hypertension, fever, fall) and ~0.4 % deliberately invalid readings. |
+| 2 | Ingestion | MQTT broker | `ingestion/mosquitto.conf`, `ingestion/mqtt_to_kafka_bridge.py` (profile `mqtt`) | Optional: devices publish to `wearables/<patient>/vitals`, and the bridge forwards to Kafka. |
+| 2 | Ingestion | Apache Kafka, "vitals" topic, per-patient partitions | `docker-compose.yml` → `kafka`, `kafka-init` | Kafka 3.7.1 in KRaft mode. Topic `vitals` with 3 partitions. Messages are keyed by `patient_id`, so each patient's readings stay in order on one partition. |
+| 3 | Big Data platform | Spark Structured Streaming: noise filter, missing values, 1-min windows, real-time threshold rules | `spark/streaming_job.py` (service `spark-streaming`) | 4 streaming queries: **Bronze** raw copy · **Silver** parse + drop invalid/missing + de-duplicate · **Gold alerts** threshold rules with severity + latency · **Gold vitals_1min** 1-minute averages per patient with a 1-minute watermark. |
+| 3 | Big Data platform | HDFS data lake Bronze / Silver / Gold, Parquet, partitioned by date | `data/bronze`, `data/silver`, `data/gold` (paths in `common/settings.py`) | Same layered Parquet lake, partitioned by date, in local folders (see *What we replaced*). |
+| 3 | Big Data platform | Apache Hive: Patients, Vitals, Alerts tables; daily / weekly, trend & cohort queries | `hive/create_tables.hql`, `hive/queries.hql`, `hive/run_hive_queries.py` (services `hive-queries`, `hive-shell`) | External Hive tables `patients, raw_vitals, vitals, vitals_1min, alerts, patient_risk` in database `wearable_health`. 7 HiveQL queries cover per-patient averages, alert counts, top risky patients, hourly ward trend, daily summary, data quality and risk mix. |
+| 4 | Analytics | Anomaly detection (tachycardia, low SpO2, high BP, falls) | `alerts_layer()` in `spark/streaming_job.py`, thresholds in `common/settings.py` | Rule-based detection on every reading: HR > 120, SpO2 < 92, BP > 140/90, temp > 38 °C, fall. CRITICAL above a second, stricter limit. |
+| 4 | Analytics | Spark MLlib: health-risk score, patient clustering | `ml/risk_model.py` (services `ml`, `ml-once`) | Decision tree (depth 4) → Low / Medium / High per patient + 0–100 risk score. KMeans (k = 3) → Stable / Watch / Unstable clusters. Results go to Gold `patient_risk`. |
+| 5 | Visualization | Grafana / Superset doctor dashboard: live vitals panels, alert notifications | `dashboard/app.py` (service `dashboard`) | Streamlit page, auto-refreshing: KPI cards, live HR & SpO2 with thresholds, alerts by type, risk donut, red alerts table, patient risk table. |
+| – | (all) | shared configuration | `common/settings.py` | One place for paths, topic name, alert thresholds and risk-score bands. Spark, ML, dashboard and tests all use it. |
+
+**Data flow of one reading:** the simulator creates `{"patient_id":"P-017","heart_rate":131,...}` → Kafka topic `vitals` (key `P-017`) → Spark writes the raw JSON to **Bronze**. It parses and validates the reading → **Silver**. HR 131 > 120 raises a `HIGH_HR` WARNING → **Gold alerts**, about 2 s after the reading. At the end of the minute, P-017's averages → **Gold vitals_1min**. The ML job labels P-017's recent minutes → **Gold patient_risk**. The dashboard reads Silver + Gold every 5 s.
+
+## What we replaced or simplified (and what to say in the viva)
+
+| In the PPT | In this working model | One line for the viva |
+|---|---|---|
+| HDFS cluster (Bronze/Silver/Gold) | **Local folders** `data/bronze`, `data/silver`, `data/gold` (same Parquet files, same date partitions) | "HDFS needs a NameNode and DataNodes, which is too heavy for a laptop. Spark writes through the same Hadoop FileSystem API, so moving to HDFS only means changing the path to `hdfs://`." |
+| Apache Hive server | **Spark SQL with Hive support** (Hive metastore + HiveQL, run by Spark) | "We use Hive's metastore and HiveQL through Spark's built-in Hive support, instead of running a separate HiveServer2, which needs several extra GB of RAM." |
+| Grafana / Apache Superset | **Streamlit** dashboard | "Grafana and Superset need a database connector and a separate server. Streamlit reads the same Gold tables in Python, so the demo stays light. In production, Grafana would connect to the same Hive tables." |
+| MQTT broker → Kafka | Default: the simulator acts as the **smartphone gateway and publishes straight to Kafka**. The full MQTT path is **included as an option** (`--profile mqtt`). | "The MQTT hop is implemented and can be switched on. By default the gateway publishes directly to Kafka to keep the demo simple." |
+| Isolation Forest (anomaly detection) | **Threshold rules** for alerts + an MLlib **decision tree** for risk | "Isolation Forest isn't part of Spark MLlib, so we used clinical threshold rules for real-time anomalies and an explainable MLlib decision tree for risk." |
+| REST / FHIR API, mobile app alerts | Not built | "FHIR integration with hospital EHRs is listed as future enhancement." |
+| Glucose (CGM), ECG waveform, sleep data | Not simulated. We simulate HR, SpO2, BP, temperature, steps and fall events. | "We focused on the vital signs that drive our alert rules. ECG arrhythmia detection is future work." |
+| Security bar (TLS, Kerberos, Ranger, encryption) | Not enabled in the local demo | "Security is designed in the architecture, but in a local demo we run without authentication." |
+| Result slide: 50 patients, "Anomaly model recall 92 %" | 20 patients by default; the dashboard shows **model accuracy** | "The cohort size is a parameter." To match the slide, change `--patients 20` to `--patients 50` in `docker-compose.yml`. |
+| Zookeeper (not in slides) | Kafka **KRaft** mode, no Zookeeper | "Kafka 3.x can manage its own metadata (KRaft), which saves memory." |
+
+> ⚠️ **Slide 8 (Result)** is titled *"Live Dashboard (Grafana)"*. Either change that caption to "Streamlit", or use the Grafana line above if you're asked.
+
+## 10 likely viva questions (with short answers from this code)
+
+1. **Why put Kafka between the wearables and Spark?**
+   Kafka is a durable buffer. Devices keep sending even if Spark is slow or restarting, and Spark can replay from saved offsets. The `vitals` topic has 3 partitions and messages are keyed by `patient_id`, so each patient's readings stay in order and the load spreads across partitions.
+
+2. **What is Spark Structured Streaming and how often does it run?**
+   It treats the Kafka stream as an ever-growing table and processes it in small micro-batches. Our triggers are every 3 s (alerts), 5 s (Silver), and 10 s (Bronze and 1-minute windows). Checkpoints in `data/checkpoints/` store the Kafka offsets, so after a restart it continues where it stopped, with no duplicates in the Parquet output.
+
+3. **What is the difference between Bronze, Silver and Gold?**
+   Bronze holds the raw Kafka message, untouched (`raw_json`), so we can always re-process. Silver holds parsed, typed, validated and de-duplicated readings. Gold holds business-ready data: alerts, 1-minute patient features and ML risk levels. All are Parquet, partitioned by date.
+
+4. **How do you handle noisy or invalid sensor data?**
+   `parse_and_clean()` drops readings with missing fields, impossible values (HR outside 30–220, SpO2 outside 70–100, temperature outside 34–42 °C, systolic ≤ diastolic) or bad timestamps. The simulator sends about 0.4 % broken readings on purpose. Hive query Q6 compares Bronze and Silver counts to show how many were dropped.
+
+5. **What is a watermark?**
+   It tells Spark how long to wait for late readings. We use 1 minute for the window aggregation: a 1-minute window is finalised and written once the stream's event time has moved 1 minute past its end. Readings later than that are ignored. That's why the windows appear about 2 minutes after start.
+
+6. **How are alerts generated, and how fast?**
+   Every clean reading is checked against the rules in `common/settings.py`: HR > 120, SpO2 < 92, BP > 140/90, temperature > 38 °C, fall detected. A second, stricter limit (e.g. HR > 140, SpO2 < 88) makes it CRITICAL. We store `latency_sec` = alert time − reading time, usually 1–3 s, and it's shown as a KPI card.
+
+7. **Why Parquet, and why partition by date?**
+   Parquet is columnar and compressed, so a query like "average heart rate" reads only that column. Date partitions (`event_date=2026-10-08/`) let Hive and Spark skip the days a query doesn't need.
+
+8. **Where is Hive in your project?**
+   `hive/create_tables.hql` registers the lake folders as external Hive tables in the Hive metastore (database `wearable_health`). External means dropping a table never deletes the data. We run HiveQL through Spark's Hive support. You can also run queries live with `docker compose run --rm hive-shell`.
+
+9. **How does your ML model work, and why is its accuracy so high?**
+   Each 1-minute window is labelled with an early-warning score (like NEWS2: points for each abnormal vital; 0–1 Low, 2–3 Medium, 4+ High). An MLlib `DecisionTreeClassifier` (depth 4) learns those labels from 8 features, trained on 80 % and tested on 20 %. Accuracy is close to 100 % because the labels come from rules on the same features: the tree learns a compact, explainable version of the clinical score. With real doctor-labelled outcomes the same pipeline would simply be retrained on those labels. The patient's level is the majority vote of their last 5 minutes. KMeans (k = 3) groups patients into Stable / Watch / Unstable.
+
+10. **How would this scale to thousands of patients?**
+    Add Kafka partitions and brokers, run Spark on a cluster (YARN or Kubernetes) instead of `local[2]`, and store the lake on HDFS or cloud storage. The code stays the same: only the Kafka address, the Spark master and the data path change (all in `common/settings.py` / environment variables).
+
+## Screenshots
+
+Once your demo is running, take screenshots of the dashboard (http://localhost:8501), the Spark UI (http://localhost:4040) and the `hive-queries` output. Save them in `docs/screenshots/`, for example `docs/screenshots/dashboard.png`, then add them here:
+
+```markdown
+![Live dashboard](docs/screenshots/dashboard.png)
+```
+
+(They could not be captured while building the project, because the build environment had no access to Docker Hub.)
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| `docker: command not found` / "cannot connect to the Docker daemon" | Open Docker Desktop and wait for *Engine running*. |
+| `port is already allocated` (9092, 8501, 4040 or 1883) | Another program uses that port. Close it, or change the left-hand number in `ports:` in `docker-compose.yml`. |
+| Build fails while downloading | Check your internet connection and run `docker compose build` again. |
+| A container shows `Exited (137)` | Out of memory. Give Docker more RAM, and don't run `hive-queries`/`ml-once` while `ml` is also running. |
+| Dashboard keeps saying "Waiting for data" | `docker compose ps` – are `generator` and `spark-streaming` running? Check `docker compose logs spark-streaming`. |
+| Risk donut / risk table empty | The ML job needs ~40 one-minute windows (≈ 3 min). Check `docker compose logs ml`. |
+| `hive-queries` says SKIP for a table | That layer has no data yet (e.g. `patient_risk` before the ML job). Let the pipeline run longer. |
+| Strange errors after resetting Kafka | Do the **full reset** above: delete the `data/` folders *and* run `docker compose down -v`. |
+| Windows: Spark is slow to write files | Keep the project folder on the C: drive, not in OneDrive. |
+
+## Push this project to GitHub
+
+The git history already has one commit per phase. Create an **empty** repository named `wearable-health-monitoring` on GitHub (no README, no .gitignore), then in this folder:
+
+```bash
+git remote add origin https://github.com/<your-username>/wearable-health-monitoring.git
+git push -u origin main
+```
+
+The `.gitignore` keeps `data/`, Spark checkpoints, the Hive metastore, virtual environments and `.env` files out of git.
+
+## Detailed step-by-step (phase by phase)
+
+Use this section the first time, to check that each part works on its own.
+
 
 ### Phase 2 – Start Kafka
 
