@@ -8,6 +8,8 @@
 #                         kafka-init         (creates the "vitals" topic, then exits)
 #                         mosquitto, mqtt-bridge, generator-mqtt   (OPTIONAL MQTT path, profile "mqtt")
 #   3. Big Data platform  spark-streaming    (Spark Structured Streaming -> Bronze/Silver/Gold Parquet)
+#                         hive-queries       (HiveQL tables + example queries, run on demand)
+#                         hive-shell         (interactive HiveQL prompt, run on demand)
 #
 # More services are added in the later phases.
 # ===========================================================================
@@ -148,6 +150,33 @@ services:
     command: ["spark-submit", "--driver-memory", "1g",
               "--conf", "spark.ui.showConsoleProgress=false",
               "spark/streaming_job.py"]
+
+  # -------------------------------------------------------------------------
+  # PHASE 5 - Hive (HiveQL through Spark's built-in Hive support).
+  # On-demand tools (profile "tools"):
+  #   docker compose run --rm hive-queries     -> create tables + run hive/queries.hql
+  #   docker compose run --rm hive-shell       -> interactive "spark-sql>" HiveQL prompt
+  # Only run ONE of these at a time (the small Derby metastore allows one user).
+  # -------------------------------------------------------------------------
+  hive-queries:
+    <<: *app
+    profiles: ["tools"]
+    command: ["spark-submit", "--driver-memory", "1g",
+              "--driver-java-options", "-Dderby.system.home=/hive",
+              "hive/run_hive_queries.py"]
+
+  hive-shell:
+    <<: *app
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
+    command: ["spark-sql", "--driver-memory", "1g",
+              "--driver-java-options", "-Dderby.system.home=/hive",
+              "--conf", "spark.sql.warehouse.dir=/hive/warehouse",
+              "--conf", "spark.hadoop.javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=/hive/metastore_db;create=true",
+              "--conf", "spark.sql.hive.manageFilesourcePartitions=false",
+              "--conf", "spark.sql.session.timeZone=UTC",
+              "--database", "wearable_health"]
 
 volumes:
   kafka_data:       # Kafka's message log

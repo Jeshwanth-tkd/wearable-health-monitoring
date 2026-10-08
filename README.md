@@ -14,8 +14,8 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 | 2 | Kafka with Docker Compose | ✅ done |
 | 3 | Wearable data simulator | ✅ done |
 | 4 | Spark Structured Streaming + Bronze/Silver/Gold | ✅ done |
-| 5 | Hive queries | ⏳ next |
-| 6 | Spark MLlib risk model | ⏳ |
+| 5 | Hive queries | ✅ done |
+| 6 | Spark MLlib risk model | ⏳ next |
 | 7 | Streamlit dashboard | ⏳ |
 | 8 | Final docs + viva questions | ⏳ |
 
@@ -163,3 +163,43 @@ docker compose exec spark-streaming spark-submit spark/check_layers.py
 The 1-minute windows appear about **2 minutes** after start. That's because a window is only written once it is closed: its minute must end, plus the 1-minute watermark for late readings.
 
 Spark UI: open http://localhost:4040 → **Structured Streaming** tab to see input rate and batch durations (nice for the viva).
+
+### Phase 5 – Query the data lake with Hive (HiveQL)
+
+> **Hive note:** a full Hive install (HiveServer2 + metastore database) needs several GB of extra RAM. We use **Spark SQL with Hive support**: it's the same Hive metastore and the same HiveQL, run by Spark. The metastore is a small Derby database kept in a Docker volume.
+
+With the generator and streaming job still running (let them run 3+ minutes first):
+
+```bash
+docker compose run --rm hive-queries
+```
+
+This registers 6 external Hive tables in database `wearable_health`:
+
+| Hive table | Layer | Data folder |
+|---|---|---|
+| `patients` | reference | `data/reference/patients/` (CSV) |
+| `raw_vitals` | Bronze | `data/bronze/raw_vitals/` |
+| `vitals` | Silver | `data/silver/vitals/` |
+| `vitals_1min` | Gold | `data/gold/vitals_1min/` |
+| `alerts` | Gold | `data/gold/alerts/` |
+| `patient_risk` | Gold | `data/gold/patient_risk/` (after Phase 6) |
+
+Then it runs the example queries in `hive/queries.hql`:
+
+1. Average vitals per patient
+2. Alert counts by type and severity (+ average alert latency)
+3. Top 5 risky patients
+4. Hourly trend per ward (cohort query)
+5. Daily summary per patient – lowest SpO2 first
+6. Data quality: Bronze vs Silver row counts (readings dropped by the noise filter)
+7. Patient risk levels from MLlib (shows "skipped" until Phase 6 has run)
+
+Interactive Hive prompt (type a query ending with `;`, `exit;` to quit):
+
+```bash
+docker compose run --rm hive-shell
+spark-sql (wearable_health)> SELECT alert_type, COUNT(*) FROM alerts GROUP BY alert_type;
+```
+
+Run `hive-queries` and `hive-shell` one at a time (the Derby metastore allows one user at a time).
