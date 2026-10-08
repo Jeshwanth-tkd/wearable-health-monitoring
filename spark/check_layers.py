@@ -46,8 +46,14 @@ def main():
     n_silver = silver.count() if silver is not None else 0
     print(f"BRONZE raw messages        : {n_bronze}")
     print(f"SILVER clean readings      : {n_silver}")
-    if n_bronze:
-        print(f"   -> dropped by noise filter (invalid / not yet processed): {n_bronze - n_silver}")
+    if n_bronze and silver is not None:
+        # Silver is written every 5 s but Bronze only every 10 s, so Silver can be a few
+        # seconds ahead. Compare both layers up to the same Kafka time, otherwise the
+        # "dropped" number can come out negative.
+        cutoff = bronze.agg(F.max("kafka_time")).first()[0]
+        n_silver_same = silver.filter(F.col("kafka_time") <= F.lit(cutoff)).count()
+        print(f"   -> dropped by noise filter (invalid / duplicate), up to {cutoff}: "
+              f"{n_bronze - n_silver_same}")
 
     if silver is not None:
         print("\nSILVER sample (latest 5 readings):")
