@@ -1,0 +1,18 @@
+# Python libraries used by the generator, MQTT bridge, ML job and dashboard.
+# They are installed INSIDE the Docker image (see Dockerfile), so you do not
+# need to pip install anything on your laptop.
+#
+# Versions are pinned so they work together on Python 3.10 (the Python that
+# ships in the apache/spark:3.5.1 image).
+#
+# NOTE: PySpark itself is NOT listed here. It comes from the Spark 3.5.1
+# image (Spark 3.5.1 + Java 17 + Scala 2.12), together with the Kafka
+# connector jars that the Dockerfile adds.
+
+kafka-python==2.0.2      # Kafka producer used by the wearable simulator / MQTT bridge
+paho-mqtt==1.6.1         # MQTT client (optional MQTT path, like the PPT diagram)
+numpy==1.26.4            # needed by Spark MLlib (pyspark.ml)
+pandas==2.2.3            # dashboard tables + ML result export
+pyarrow==17.0.0          # dashboard reads the Parquet Bronze/Silver/Gold files
+streamlit==1.39.0        # live dashboard (st.fragment auto-refresh needs >= 1.37)
+altair==5.4.1            # charts inside the dashboard

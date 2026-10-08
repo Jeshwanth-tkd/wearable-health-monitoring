@@ -1,0 +1,39 @@
+# ---- Data lake output (Bronze / Silver / Gold Parquet) — never commit data ----
+data/*
+!data/.gitkeep
+
+# ---- Spark checkpoints, Hive metastore, Spark temp files ----
+checkpoints/
+**/checkpoints/
+metastore_db/
+derby.log
+spark-warehouse/
+spark-events/
+*.crc
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# ---- Virtual environments ----
+venv/
+.venv/
+env/
+
+# ---- Secrets / local settings (never commit) ----
+.env
+*.env
+secrets/
+
+# ---- Editors / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Large / packaged files ----
+*.zip
+*.tar.gz
+*.parquet
+*.jar

@@ -1,0 +1,5 @@
+# Keep Linux line endings for every text file, even when cloned on Windows.
+# (The code runs inside Linux Docker containers, which dislike Windows CRLF.)
+* text=auto eol=lf
+*.png binary
+*.jpg binary

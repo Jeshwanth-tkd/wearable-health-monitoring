@@ -1,0 +1,7 @@
+# Files Docker should NOT copy when building the image (keeps builds fast).
+data/
+.git/
+venv/
+.venv/
+__pycache__/
+docs/screenshots/
