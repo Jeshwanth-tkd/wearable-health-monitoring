@@ -36,4 +36,6 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.parquet
+# ...except the small recording replayed by the online dashboard (dashboard/cloud_app.py)
+!demo_data/*.parquet
 *.jar

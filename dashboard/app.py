@@ -31,6 +31,11 @@ import streamlit as st
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from common import settings as S  # noqa: E402
 
+# Replay mode (online demo, see dashboard/cloud_app.py): instead of the live data
+# lake, replay a recording of real pipeline output from demo_data/ in a loop.
+REPLAY = os.environ.get("DASHBOARD_MODE") == "replay"
+REPLAY_DIR = os.path.join(S.PROJECT_ROOT, "demo_data")
+
 # ---------------------------------------------------------------------------
 # Colours: one accent for data lines/bars; status colours ONLY for risk/alerts
 # (always paired with a text label, never colour alone).
@@ -114,14 +119,16 @@ def count_rows(folder):
 
 def load_patients():
     try:
-        return pd.read_csv(S.PATIENTS_CSV)
+        return pd.read_csv(os.path.join(REPLAY_DIR, "patients.csv") if REPLAY else S.PATIENTS_CSV)
     except Exception:
         return pd.DataFrame(columns=["patient_id", "age", "gender", "ward", "device_type", "device_id"])
 
 
 def load_risk():
     """MLlib output. Kept in session memory so a refresh during an overwrite shows the last good copy."""
-    df = read_parquet_files(list_parquet_files(S.GOLD_PATIENT_RISK))
+    paths = ([os.path.join(REPLAY_DIR, "patient_risk.parquet")] if REPLAY
+             else list_parquet_files(S.GOLD_PATIENT_RISK))
+    df = read_parquet_files(paths)
     if not df.empty:
         st.session_state["risk"] = df
     return st.session_state.get("risk", pd.DataFrame())
@@ -129,11 +136,33 @@ def load_risk():
 
 def load_metrics():
     try:
-        with open(S.GOLD_MODEL_METRICS) as f:
+        with open(os.path.join(REPLAY_DIR, "model_metrics.json") if REPLAY else S.GOLD_MODEL_METRICS) as f:
             st.session_state["metrics"] = json.load(f)
     except Exception:
         pass
     return st.session_state.get("metrics", {})
+
+
+@st.cache_data
+def load_recording():
+    """Replay mode: the recorded Silver readings, Gold alerts and recording info."""
+    vitals = read_parquet_files([os.path.join(REPLAY_DIR, "vitals.parquet")])
+    alerts = read_parquet_files([os.path.join(REPLAY_DIR, "alerts.parquet")])
+    with open(os.path.join(REPLAY_DIR, "recording.json")) as f:
+        info = json.load(f)
+    return vitals, alerts, info
+
+
+def replay_on_clock(df, start, length_sec, now):
+    """Move recorded rows onto the current clock. The recording plays in a loop:
+    the position is (seconds since 1970) modulo its length, so every viewer sees the
+    same moment. Each row gets the time it was last "played"; rows not yet played in
+    this loop come from the end of the previous loop."""
+    position = now.timestamp() % length_sec
+    offset = (df["event_time"] - start).dt.total_seconds()
+    out = df.copy()
+    out["event_time"] = now - pd.to_timedelta((position - offset) % length_sec, unit="s")
+    return out
 
 
 # ===========================================================================
@@ -208,13 +237,27 @@ with st.sidebar:
 st.title("🩺 Wearable Health Monitoring – Live Dashboard")
 st.caption("Wearables → Kafka → Spark Structured Streaming → Data lake (Bronze / Silver / Gold) "
            "→ Hive → Spark MLlib → this dashboard")
+if REPLAY:
+    _, _, _rec = load_recording()
+    _minutes = (pd.Timestamp(_rec["recorded_to_utc"]) - pd.Timestamp(_rec["recorded_from_utc"])).total_seconds() / 60
+    st.info(f"▶️ **Recorded replay.** This online copy plays back {_minutes:.0f} minutes of real output from the "
+            f"pipeline (20 patients → Kafka → Spark → MLlib), recorded on {_rec['recorded_from_utc'][:10]}, "
+            "in a loop. Run the project with Docker to see the live pipeline.")
 
 
 @st.fragment(run_every=None if paused else refresh_sec)
 def live_view():
     """Everything in here re-runs every `refresh_sec` seconds (only this part of the page)."""
-    silver = read_parquet_files(list_parquet_files(S.SILVER_VITALS, newer_than_minutes=history_min + 2))
-    alerts = read_parquet_files(list_parquet_files(S.GOLD_ALERTS, newer_than_minutes=history_min + 2))
+    now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+    if REPLAY:
+        rec_vitals, rec_alerts, rec = load_recording()
+        start = rec_vitals["event_time"].min()
+        length = (rec_vitals["event_time"].max() - start).total_seconds() + 1
+        silver = replay_on_clock(rec_vitals, start, length, now)
+        alerts = replay_on_clock(rec_alerts, start, length, now)
+    else:
+        silver = read_parquet_files(list_parquet_files(S.SILVER_VITALS, newer_than_minutes=history_min + 2))
+        alerts = read_parquet_files(list_parquet_files(S.GOLD_ALERTS, newer_than_minutes=history_min + 2))
     risk, metrics = load_risk(), load_metrics()
 
     if silver.empty:
@@ -223,7 +266,6 @@ def live_view():
         return
 
     # keep only the chosen history window
-    now = pd.Timestamp.now(tz="UTC").tz_localize(None)
     since = now - pd.Timedelta(minutes=history_min)
     silver = silver[silver["event_time"] >= since].sort_values("event_time")
     if silver.empty:
@@ -236,7 +278,9 @@ def live_view():
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     active = silver[silver["event_time"] >= now - pd.Timedelta(minutes=1)]["patient_id"].nunique()
     k1.metric("Patients monitored", f"{active}", help="Patients that sent a reading in the last minute")
-    k2.metric("Readings ingested", f"{count_rows(S.SILVER_VITALS):,}", help="All clean readings in the Silver layer")
+    ingested = (next(l["rows"] for l in rec["layers"] if l["layer"] == "Silver") if REPLAY
+                else count_rows(S.SILVER_VITALS))
+    k2.metric("Readings ingested", f"{ingested:,}", help="All clean readings in the Silver layer")
     latency = alerts["latency_sec"].mean() if not alerts.empty else None
     k3.metric("Avg alert latency", f"{latency:.1f} s" if latency is not None else "–",
               help="Device reading → alert written by Spark")
@@ -310,7 +354,8 @@ def live_view():
             "avg_hr": "HR", "avg_spo2": "SpO2", "avg_sys": "sys BP", "avg_dia": "dia BP", "avg_temp": "temp °C",
         })
         if metrics.get("trained_at_utc"):
-            st.caption(f"Model last run {metrics['trained_at_utc']} UTC · re-scored every 60 s")
+            st.caption(f"Model last run {metrics['trained_at_utc']} UTC"
+                       + (" (recorded)" if REPLAY else " · re-scored every 60 s"))
 
     # ------------------------- details for the viva -------------------------
     with st.expander("🌳 How the MLlib model decides (decision tree rules)"):
@@ -324,18 +369,22 @@ def live_view():
             st.caption("Model not trained yet.")
 
     with st.expander("🗂️ Pipeline status (data lake layers)"):
-        rows = []
-        for layer, name, folder in [("Bronze", "raw_vitals", S.BRONZE_RAW),
-                                    ("Silver", "vitals", S.SILVER_VITALS),
-                                    ("Gold", "alerts", S.GOLD_ALERTS),
-                                    ("Gold", "vitals_1min", S.GOLD_VITALS_1MIN),
-                                    ("Gold", "patient_risk", S.GOLD_PATIENT_RISK)]:
-            files = list_parquet_files(folder)
-            newest = max((t for t in map(safe_mtime, files) if t), default=None)
-            rows.append({"layer": layer, "table": name, "parquet files": len(files),
-                         "rows": count_rows(folder),
-                         "last write (UTC)": datetime.fromtimestamp(newest, timezone.utc).strftime("%H:%M:%S")
-                         if newest else "–"})
+        if REPLAY:
+            st.caption(f"Data lake as recorded at {rec['recorded_to_utc'][:19]} UTC.")
+            rows = rec["layers"]
+        else:
+            rows = []
+            for layer, name, folder in [("Bronze", "raw_vitals", S.BRONZE_RAW),
+                                        ("Silver", "vitals", S.SILVER_VITALS),
+                                        ("Gold", "alerts", S.GOLD_ALERTS),
+                                        ("Gold", "vitals_1min", S.GOLD_VITALS_1MIN),
+                                        ("Gold", "patient_risk", S.GOLD_PATIENT_RISK)]:
+                files = list_parquet_files(folder)
+                newest = max((t for t in map(safe_mtime, files) if t), default=None)
+                rows.append({"layer": layer, "table": name, "parquet files": len(files),
+                             "rows": count_rows(folder),
+                             "last write (UTC)": datetime.fromtimestamp(newest, timezone.utc).strftime("%H:%M:%S")
+                             if newest else "–"})
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     st.caption(f"Last refresh {datetime.now(timezone.utc).strftime('%H:%M:%S')} UTC")

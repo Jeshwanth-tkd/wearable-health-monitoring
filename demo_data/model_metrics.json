@@ -1,0 +1,39 @@
+{
+  "trained_at_utc": "2026-10-08 16:49:12",
+  "model": "Spark MLlib DecisionTreeClassifier (maxDepth=4)",
+  "features": [
+    "avg_hr",
+    "max_hr",
+    "avg_spo2",
+    "min_spo2",
+    "avg_sys",
+    "avg_dia",
+    "avg_temp",
+    "falls"
+  ],
+  "training_windows": 301,
+  "test_windows": 59,
+  "accuracy": 0.9831,
+  "f1": 0.9831,
+  "label_distribution": {
+    "Low": 218,
+    "Medium": 80,
+    "High": 62
+  },
+  "feature_importances": {
+    "avg_hr": 0.339,
+    "max_hr": 0.0,
+    "avg_spo2": 0.0,
+    "min_spo2": 0.0,
+    "avg_sys": 0.661,
+    "avg_dia": 0.0,
+    "avg_temp": 0.0,
+    "falls": 0.0
+  },
+  "patient_risk_counts": {
+    "High": 3,
+    "Low": 12,
+    "Medium": 5
+  },
+  "tree_rules": "DecisionTreeClassificationModel: uid=DecisionTreeClassifier_ede945e54346, depth=2, numNodes=5, numClasses=3, numFeatures=8\n  If (avg_sys <= 129.8)\n   Predict: Low\n  Else (avg_sys > 129.8)\n   If (avg_hr <= 95.0)\n    Predict: Medium\n   Else (avg_hr > 95.0)\n    Predict: High\n"
+}

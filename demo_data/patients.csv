@@ -1,0 +1,21 @@
+patient_id,age,gender,ward,device_type,device_id
+P-001,66,M,Pulmonology,BP Monitor,DEV-001
+P-002,45,F,Cardiology,Fitness Band,DEV-002
+P-003,65,M,General Medicine,Fitness Band,DEV-003
+P-004,41,M,General Medicine,Smartwatch,DEV-004
+P-005,31,M,Cardiology,Smartwatch,DEV-005
+P-006,65,M,Cardiology,BP Monitor,DEV-006
+P-007,55,F,General Medicine,Smartwatch,DEV-007
+P-008,77,F,General Medicine,Smartwatch,DEV-008
+P-009,28,M,General Medicine,Fitness Band,DEV-009
+P-010,68,F,General Medicine,ECG Patch,DEV-010
+P-011,73,M,Geriatrics,ECG Patch,DEV-011
+P-012,23,M,Pulmonology,Fitness Band,DEV-012
+P-013,40,F,Cardiology,Fitness Band,DEV-013
+P-014,55,M,Pulmonology,Smartwatch,DEV-014
+P-015,45,F,Cardiology,BP Monitor,DEV-015
+P-016,53,F,Cardiology,BP Monitor,DEV-016
+P-017,27,M,Cardiology,BP Monitor,DEV-017
+P-018,54,F,Pulmonology,BP Monitor,DEV-018
+P-019,44,F,Cardiology,BP Monitor,DEV-019
+P-020,55,M,General Medicine,Smartwatch,DEV-020

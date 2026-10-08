@@ -42,6 +42,8 @@ wearable-health-monitoring/
 ├── hive/run_hive_queries.py        runs the two .hql files through Spark's Hive support
 ├── ml/risk_model.py                Spark MLlib decision tree (Low/Medium/High) + KMeans clusters
 ├── dashboard/app.py                Streamlit live dashboard
+├── dashboard/cloud_app.py          online copy of the dashboard (replays demo_data/)
+├── demo_data/                      recorded pipeline output used by the online dashboard
 ├── tests/test_logic.py             logic tests (simulator, thresholds, risk score) - no Spark needed
 ├── docker-compose.yml              starts every service
 ├── Dockerfile                      one image: Spark 3.5.1 + Java 17 + Python libs + Kafka connector
@@ -195,6 +197,24 @@ then delete the folders inside `data/`:
 
 10. **How would this scale to thousands of patients?**
     Add Kafka partitions and brokers, run Spark on a cluster (YARN or Kubernetes) instead of `local[2]`, and store the lake on HDFS or cloud storage. The code stays the same: only the Kafka address, the Spark master and the data path change (all in `common/settings.py` / environment variables).
+
+## Online demo (works with the laptop off)
+
+Kafka and Spark can't run on a free web host, so the online copy of the dashboard is a **recorded replay**: `dashboard/cloud_app.py` starts the normal dashboard in replay mode, and it plays back a 14-minute recording of real pipeline output (`demo_data/`) in a loop on the current clock. Charts move and alerts appear just like the live version, and a banner on the page says it is a replay.
+
+Hosted free on **Streamlit Community Cloud**:
+
+1. Sign in at https://share.streamlit.io with your GitHub account.
+2. **Create app** → *Deploy a public app from GitHub* → repository `Jeshwanth-tkd/wearable-health-monitoring`, branch `main`, main file path **`dashboard/cloud_app.py`**.
+3. *Advanced settings* → Python **3.12** → **Deploy**. It installs `dashboard/requirements.txt` and is online in about 2 minutes.
+
+To record fresh data for the online copy, run the pipeline for 10+ minutes, then:
+
+```bash
+docker compose exec dashboard python3 dashboard/export_replay_data.py
+```
+
+and commit + push `demo_data/`. Streamlit Cloud redeploys automatically.
 
 ## Screenshots
 

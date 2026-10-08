@@ -1,0 +1,36 @@
+{
+  "recorded_from_utc": "2026-10-08 16:27:30.094000",
+  "recorded_to_utc": "2026-10-08 16:41:39.570000",
+  "layers": [
+    {
+      "layer": "Bronze",
+      "table": "raw_vitals",
+      "parquet files": 116,
+      "rows": 15650
+    },
+    {
+      "layer": "Silver",
+      "table": "vitals",
+      "parquet files": 167,
+      "rows": 15613
+    },
+    {
+      "layer": "Gold",
+      "table": "alerts",
+      "parquet files": 110,
+      "rows": 390
+    },
+    {
+      "layer": "Gold",
+      "table": "vitals_1min",
+      "parquet files": 18,
+      "rows": 380
+    },
+    {
+      "layer": "Gold",
+      "table": "patient_risk",
+      "parquet files": 1,
+      "rows": 20
+    }
+  ]
+}
