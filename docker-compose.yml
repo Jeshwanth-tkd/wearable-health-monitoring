@@ -7,6 +7,7 @@
 #   2. Ingestion          kafka              (Apache Kafka 3.7.1, KRaft mode = no Zookeeper)
 #                         kafka-init         (creates the "vitals" topic, then exits)
 #                         mosquitto, mqtt-bridge, generator-mqtt   (OPTIONAL MQTT path, profile "mqtt")
+#   3. Big Data platform  spark-streaming    (Spark Structured Streaming -> Bronze/Silver/Gold Parquet)
 #
 # More services are added in the later phases.
 # ===========================================================================
@@ -131,6 +132,22 @@ services:
       mqtt-bridge:
         condition: service_started
     command: ["python3", "generator/wearable_simulator.py", "--patients", "20", "--mode", "mqtt"]
+
+  # -------------------------------------------------------------------------
+  # PHASE 4 - Spark Structured Streaming: Kafka -> Bronze / Silver / Gold.
+  # Spark UI (Structured Streaming tab): http://localhost:4040
+  # -------------------------------------------------------------------------
+  spark-streaming:
+    <<: *app
+    container_name: spark-streaming
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "4040:4040"
+    command: ["spark-submit", "--driver-memory", "1g",
+              "--conf", "spark.ui.showConsoleProgress=false",
+              "spark/streaming_job.py"]
 
 volumes:
   kafka_data:       # Kafka's message log

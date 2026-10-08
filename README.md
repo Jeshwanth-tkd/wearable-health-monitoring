@@ -13,8 +13,8 @@ Wearables → (MQTT) → Kafka → Spark Structured Streaming → Data Lake Bron
 | 1 | Project setup (folders, requirements, .gitignore) | ✅ done |
 | 2 | Kafka with Docker Compose | ✅ done |
 | 3 | Wearable data simulator | ✅ done |
-| 4 | Spark Structured Streaming + Bronze/Silver/Gold | ⏳ next |
-| 5 | Hive queries | ⏳ |
+| 4 | Spark Structured Streaming + Bronze/Silver/Gold | ✅ done |
+| 5 | Hive queries | ⏳ next |
 | 6 | Spark MLlib risk model | ⏳ |
 | 7 | Streamlit dashboard | ⏳ |
 | 8 | Final docs + viva questions | ⏳ |
@@ -125,3 +125,41 @@ docker compose stop generator
 docker compose --profile mqtt up -d mosquitto mqtt-bridge generator-mqtt
 docker compose logs -f mqtt-bridge      # "forwarded 500 messages MQTT -> Kafka"
 ```
+
+### Phase 4 – Start the Spark streaming job (Bronze / Silver / Gold)
+
+> **Storage note:** HDFS in Docker needs a NameNode + DataNode (~2 GB extra RAM) and often breaks on laptops because the DataNode's hostname isn't reachable from outside Docker. For reliability **we use local folders `data/bronze`, `data/silver`, `data/gold` instead of HDFS.** The layout, Parquet format and date partitioning are the same as in the PPT. Spark writes through the Hadoop FileSystem API either way, so on a real cluster only the path changes (`hdfs://...`).
+
+```bash
+docker compose up -d spark-streaming
+docker compose logs -f spark-streaming
+```
+
+After ~30 seconds you'll see a status line every 30 s:
+
+```
+[streaming] bronze_raw_vitals  batch=12     rows_in_last_batch=131    status=Waiting for next trigger
+[streaming] silver_vitals      batch=25     rows_in_last_batch=66     status=Waiting for next trigger
+[streaming] gold_alerts        batch=41     rows_in_last_batch=39     status=Waiting for next trigger
+[streaming] gold_vitals_1min   batch=12     rows_in_last_batch=131    status=Waiting for next trigger
+```
+
+Folders now appear in your project's `data/` folder:
+
+```
+data/bronze/raw_vitals/ingest_date=2026-10-08/part-....parquet   raw JSON from Kafka
+data/silver/vitals/event_date=2026-10-08/...                     cleaned readings
+data/gold/alerts/event_date=2026-10-08/...                       threshold alerts
+data/gold/vitals_1min/event_date=2026-10-08/...                  1-minute averages per patient
+data/checkpoints/...                                             Spark's progress bookmarks
+```
+
+Check every layer (counts, sample rows, alerts by type):
+
+```bash
+docker compose exec spark-streaming spark-submit spark/check_layers.py
+```
+
+The 1-minute windows appear about **2 minutes** after start. That's because a window is only written once it is closed: its minute must end, plus the 1-minute watermark for late readings.
+
+Spark UI: open http://localhost:4040 → **Structured Streaming** tab to see input rate and batch durations (nice for the viva).
