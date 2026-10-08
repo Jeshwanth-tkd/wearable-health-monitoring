@@ -1,5 +1,7 @@
 # Healthcare – Wearable Device Health Monitoring
 
+**Online demo:** https://wearable-health-monitoring.streamlit.app/ (recorded replay of the pipeline's output, see [Online demo](#online-demo-works-with-the-laptop-off))
+
 A working Big Data mini-project that follows the architecture in our slides, end to end:
 
 ```
@@ -202,7 +204,7 @@ then delete the folders inside `data/`:
 
 Kafka and Spark can't run on a free web host, so the online copy of the dashboard is a **recorded replay**: `dashboard/cloud_app.py` starts the normal dashboard in replay mode, and it plays back a 14-minute recording of real pipeline output (`demo_data/`) in a loop on the current clock. Charts move and alerts appear just like the live version, and a banner on the page says it is a replay.
 
-Hosted free on **Streamlit Community Cloud**:
+Live at **https://wearable-health-monitoring.streamlit.app/**, hosted free on **Streamlit Community Cloud**. To deploy your own copy:
 
 1. Sign in at https://share.streamlit.io with your GitHub account.
 2. **Create app** → *Deploy a public app from GitHub* → repository `Jeshwanth-tkd/wearable-health-monitoring`, branch `main`, main file path **`dashboard/cloud_app.py`**.
